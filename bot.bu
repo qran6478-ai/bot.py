@@ -1,0 +1,70 @@
+import os
+import asyncio
+import tempfile
+from pathlib import Path
+from telegram import Update, InputFile
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
+
+TOKEN = os.getenv("TOKEN")
+
+async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "👋 مرحبا! أنا بوت التحميل.\n"
+        "🔻 أرسل الأمر:\n"
+        "/تحميل رابط\n"
+        "باش نحملّك فيديو أو صوت."
+    )
+
+async def download_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("❗ اكتب هكذا:\n/تحميل الرابط")
+        return
+
+    url = context.args[0]
+    msg = await update.message.reply_text("⏳ جاري التحميل... استنى شوية.")
+
+    def تحميل_فيديو(link, folder):
+        import yt_dlp
+        خيارات = {
+            "outtmpl": os.path.join(folder, "%(title)s.%(ext)s"),
+            "format": "best",
+            "noplaylist": True,
+            "quiet": True,
+        }
+        with yt_dlp.YoutubeDL(خيارات) as yt:
+            info = yt.extract_info(link, download=True)
+            return yt.prepare_filename(info)
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = asyncio.get_running_loop()
+            الملف = await loop.run_in_executor(None, تحميل_فيديو, url, tmp)
+
+            path = Path(الملف)
+            if path.stat().st_size > 48 * 1024 * 1024:
+                await msg.edit_text("⚠️ الملف كبير بزاف، ما نقدرش نرسلو كامل.")
+                return
+
+            await msg.edit_text("📤 نرسل لك الملف…")
+            await update.message.reply_document(
+                document=InputFile(path.open("rb"), filename=path.name),
+                caption="✔️ تم التحميل!"
+            )
+    except Exception as e:
+        await msg.edit_text(f"❌ وقع خطأ: {e}")
+
+async def main():
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("تحميل", download_cmd))
+    print("البوت شغّال…")
+    await app.run_polling()
+
+if __name__ == "__main__":
+    asyncio.run(main())
